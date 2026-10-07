@@ -12,14 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
-          df -h / | tail -1
+      - name: Show disk before
+        run: df -h /
 
       - name: Install Homebrew dependencies
         run: |
-          brew bundle install --file VirtualMac/Brewfile || brew bundle install --file VirtualMac/Brewfile
+          brew tap hudochenkov/sshpass || true
+          # sshpass tap is untrusted in CI; it is only needed for USB deploy,
+          # not for building the deb. Ignore its failure and install the rest.
+          HOMEBREW_NO_AUTO_UPDATE=1 brew bundle install --file VirtualMac/Brewfile || true
+
+      - name: Show disk after deps
+        run: df -h /
 
       - name: Build deb
         working-directory: VirtualMac
@@ -28,8 +32,9 @@ jobs:
 
       - name: Collect artifacts
         run: |
+          df -h /
           find VirtualMac/build -name '*.deb' -print
-          find VirtualMac/build -maxdepth 2 -type f \( -name '*.deb' -o -name '*.tar.gz' \) -exec cp {} /tmp/ \;
+          find VirtualMac/build -maxdepth 2 -type f -name '*.deb' -exec cp {} /tmp/ \;
 
       - name: Upload deb
         uses: actions/upload-artifact@v4

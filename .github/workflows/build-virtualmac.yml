@@ -1,0 +1,39 @@
+name: Build VirtualMac (deb)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h / | tail -1
+
+      - name: Install Homebrew dependencies
+        run: |
+          brew bundle install --file VirtualMac/Brewfile || brew bundle install --file VirtualMac/Brewfile
+
+      - name: Build deb
+        working-directory: VirtualMac
+        run: |
+          ./setup.sh --non-interactive --skip-dependencies
+
+      - name: Collect artifacts
+        run: |
+          find VirtualMac/build -name '*.deb' -print
+          find VirtualMac/build -maxdepth 2 -type f \( -name '*.deb' -o -name '*.tar.gz' \) -exec cp {} /tmp/ \;
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: VirtualMac-deb
+          path: /tmp/*.deb
+          if-no-files-found: warn

@@ -9,8 +9,45 @@ jobs:
   build:
     runs-on: macos-14
     timeout-minutes: 350
+    env:
+      # scripts/prepare-inputs.sh only needs the restores while extracting; the
+      # images are ~31 GB together and the runner volume is small.
+      VZ_DELETE_RESTORE_IMAGES_AFTER_EXTRACT: '1'
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          set -euo pipefail
+          echo "== disk before cleanup =="
+          df -h /
+          # The runner image ships several Xcode copies, simulator runtimes and a
+          # multi-version tool cache.  None of them are used by this build, but
+          # the restore images below need ~40 GB, which the image does not have.
+          selected="$(xcode-select -p | sed 's|/Contents/Developer$||')"
+          for app in /Applications/Xcode*.app; do
+            [ -e "$app" ] || continue
+            if [ "$app" = "$selected" ]; then
+              continue
+            fi
+            sudo rm -rf "$app"
+          done
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/* || true
+          sudo rm -rf /Library/Developer/CoreSimulator/Caches/* || true
+          sudo rm -rf /Library/Developer/CoreSimulator/Volumes/* || true
+          rm -rf "$HOME/Library/Developer/Xcode/DerivedData" || true
+          rm -rf "$HOME/Library/Developer/CoreSimulator" || true
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ] && [ -d "$AGENT_TOOLSDIRECTORY" ]; then
+            # Keep Python: scripts/bootstrap.sh builds its venv from `python3`.
+            sudo find "$AGENT_TOOLSDIRECTORY" -mindepth 1 -maxdepth 1 \
+              ! -name Python -exec rm -rf {} +
+          fi
+          sudo rm -rf /usr/local/share/dotnet "$HOME/.dotnet" \
+            /usr/local/lib/android "$HOME/Library/Android" || true
+          rm -rf "$HOME/Library/Caches/Homebrew" "$HOME/Library/Caches/pip" \
+            "$HOME/.npm" "$HOME/Library/Caches/ms-playwright" || true
+          echo "== disk after cleanup =="
+          df -h /
 
       - name: Show disk before
         run: df -h /
@@ -28,6 +65,10 @@ jobs:
       - name: Build deb
         working-directory: VirtualMac
         run: |
+          # Sample free space so a later disk failure shows the trend.
+          ( while true; do df -h / | awk 'NR==2 { print "FREE " $4 }'; sleep 60; done ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
           ./setup.sh --non-interactive --skip-dependencies
 
       - name: Collect artifacts

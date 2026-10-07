@@ -217,6 +217,19 @@ hash_line() {
     printf 'vmm_entitlements_end\n'
 } > "$MANIFEST"
 
+# Disk-constrained CI runners (GitHub-hosted macOS images have well under 40 GB
+# free) cannot hold the restore images and the extracted inputs at once.  The
+# images are only read above and their hashes are already recorded in the
+# manifest, so they can be dropped once extraction succeeded.
+if [[ "${VZ_DELETE_RESTORE_IMAGES_AFTER_EXTRACT:-0}" == 1 ]]; then
+    for image in "$VZ_MACOS_IPSW" "$VZ_BIG_SUR_IPSW" "$VZ_IPADOS14_IPSW" \
+                 "${VZ_IPADOS15_IPSW:-}" "${VZ_IPADOS_IPSW:-}"; do
+        [[ -n "$image" && -f "$image" ]] || continue
+        rm -f "$image"
+        echo "removed restore image to free disk space: $image" >&2
+    done
+fi
+
 cat <<EOF
 inputs ready and verified:
   DSC: $DSC

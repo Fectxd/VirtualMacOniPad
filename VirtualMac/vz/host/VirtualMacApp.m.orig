@@ -81,41 +81,6 @@ static void setVMJetsamProtection(BOOL active)
         gVMJetsamProtectionActive = active;
 }
 
-// --- [secure-drawing patch] -------------------------------------------------
-// Issue #81: FrontBoard force-kills the app with "Process detected doing
-// insecure drawing while in secure mode" when the iPad is locked, because the
-// guest framebuffer keeps rendering. Marking the framebuffer layer "secure"
-// (same private CALayer key ScreenShieldKit uses) lets iOS treat the locked
-// rendering as secure drawing instead of killing us.
-static void VZSetDisplaySecure(BOOL secure)
-{
-    CALayer *layer = gDisplayLayer;
-    if (!layer)
-        return;
-    if (![layer respondsToSelector:NSSelectorFromString(@"disableUpdateMask")]) {
-        NSLog(@"[VirtualMac] secure-drawing patch: disableUpdateMask unavailable");
-        return;
-    }
-    NSInteger mask = secure ? ((1 << 1) | (1 << 4)) : 0;
-    [layer setValue:@(mask) forKey:@"disableUpdateMask"];
-    NSLog(@"[VirtualMac] secure-drawing patch: display secure=%d mask=%ld",
-          secure, (long)mask);
-}
-
-static void VZInstallSecureDrawingPatch(void)
-{
-    NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
-    [nc addObserverForName:UIApplicationProtectedDataWillBecomeUnavailable
-                    object:nil
-                     queue:[NSOperationQueue mainQueue]
-                usingBlock:^(NSNotification *note) { VZSetDisplaySecure(YES); }];
-    [nc addObserverForName:UIApplicationProtectedDataDidBecomeAvailable
-                    object:nil
-                     queue:[NSOperationQueue mainQueue]
-                usingBlock:^(NSNotification *note) { VZSetDisplaySecure(NO); }];
-}
-// --- [secure-drawing patch] end ---------------------------------------------
-
 static id gVirtualMachine;
 static id gVirtualMachineDelegate;
 static UIView *gFramebufferView;
@@ -5085,8 +5050,6 @@ static BOOL prepareFramebuffer(UIView *container) {
     CALayer *displayLayer =
         ((CALayer *(*)(id, SEL))objc_msgSend)(view, S("layer"));
     gDisplayLayer = displayLayer;
-    VZSetDisplaySecure(YES); // secure-drawing patch
-    VZInstallSecureDrawingPatch(); // secure-drawing patch
     displayLayer.frame = viewport;
     [container.layer insertSublayer:displayLayer atIndex:0];
     ((void(*)(id, SEL, BOOL))objc_msgSend)(
